@@ -1,0 +1,8 @@
+*
+!Dockerfile
+!weather.py
+!requirements-cloud-run.txt
+!pyproject.toml
+!uv.lock
+!.gcloudignore
+!.dockerignore

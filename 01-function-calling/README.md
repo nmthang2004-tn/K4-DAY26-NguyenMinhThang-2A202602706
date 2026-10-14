@@ -17,9 +17,64 @@ User hỏi  →  Model quyết định gọi get_weather(city="Hà Nội")
 
 ```bash
 pip install -r ../requirements.txt
-export GEMINI_API_KEY=...
+# Set GEMINI_API_KEY in the repository root .env
 python weather_function_calling.py
 ```
+
+### Chạy trên Windows PowerShell và làm checkpoint
+
+Từ thư mục gốc repo, không cần kích hoạt virtualenv hay export key:
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 .\01-function-calling\weather_function_calling.py
+```
+
+Script đọc `GEMINI_API_KEY` trong `.env` gốc. Bài này dùng dữ liệu mock,
+không cần `WEATHERAPI_KEY` hay MCP server. Model mặc định là
+`gemini-3.5-flash-lite`; có thể đổi bằng biến `GEMINI_MODEL` trong `.env`.
+Khi lời gọi model lỗi, tự thử lần lượt `gemini-3.1-flash-lite`,
+`gemini-3.6-flash-lite`, `gemini-3.6-flash`, `gemini-3.7-flash`,
+`gemini-3.8-flash`. Model không có quyền truy cập hoặc không tồn tại sẽ
+được bỏ qua khi API trả lỗi. Nếu tất cả lỗi, chương trình báo thất bại.
+Fallback giữ nguyên lịch sử hội thoại và không chạy lại tool đã thực thi.
+HTTPS dùng kho chứng chỉ của hệ điều hành và vẫn xác minh chứng chỉ.
+
+Checkpoint đạt khi xuất hiện ít nhất một cặp `[model yêu cầu]` /
+`[app thực thi]` và câu trả lời cuối dựa trên JSON mà app trả về.
+Với câu hỏi mặc định, kiểm tra Hà Nội 29°C, mưa nhẹ và Đà Nẵng 30°C,
+nhiều mây. Các số liệu này là mock, không phải thời tiết hôm nay.
+Thứ tự gọi hai thành phố và cách diễn đạt câu trả lời có thể khác nhau.
+
+Đã kiểm tra gọi Gemini thật thành công với model `gemini-3.6-flash`:
+hai thành phố đều có cặp log yêu cầu/thực thi, rồi có `Trả lời:` dựa trên
+đúng dữ liệu mock. Bằng chứng dạng text lưu tại
+`screenshots/01-function-calling.txt` ở thư mục gốc repo.
+
+### Test tay bằng câu hỏi khác
+
+```powershell
+# Một thành phố có trong mock: 33°C, mưa rào
+.\.venv\Scripts\python.exe -X utf8 .\01-function-calling\weather_function_calling.py --prompt "Thời tiết Hồ Chí Minh thế nào?"
+
+# Thành phố ngoài mock: 28°C, không có dữ liệu chi tiết
+.\.venv\Scripts\python.exe -X utf8 .\01-function-calling\weather_function_calling.py --prompt "Lấy thời tiết Tokyo bằng get_weather, giữ nguyên tên city là Tokyo."
+
+# Câu hỏi không cần thời tiết: có thể không xuất hiện dòng gọi tool
+.\.venv\Scripts\python.exe -X utf8 .\01-function-calling\weather_function_calling.py --prompt "Chào bạn, hãy giới thiệu bản thân."
+```
+
+Muốn chứng minh app mới là nơi chạy hàm, đặt breakpoint tại
+`result = get_weather(**fc.args)`. Khi dừng ở đây, model đã đưa ra yêu cầu,
+nhưng hàm chưa chạy. Step Over sẽ chạy hàm và tạo `result`.
+
+Sau khi chạy thành công, dùng Snipping Tool chụp terminal với đầy đủ
+`[model yêu cầu]`, `[app thực thi]`, `Trả lời:` và lưu tại
+`screenshots/01-function-calling.png` ở thư mục gốc repo.
+Log dạng text, nếu có, không thay thế ảnh chụp màn hình yêu cầu nộp bài.
+
+Nếu gặp 401/403, kiểm tra key trong `.env` và các biến môi trường đặt sẵn
+(biến môi trường có ưu tiên cao hơn `.env`). Nếu gặp 404, kiểm tra model.
+Nếu gặp 429 hoặc 503, đọc lỗi quota/quá tải rồi thử lại khi điều kiện cho phép.
 
 ## File
 

@@ -28,7 +28,7 @@ Server chạy qua **Streamable HTTP** thay vì stdio, kèm bearer token verifica
 ```bash
 # Terminal 1 — khởi động server
 python auth_server.py
-# Server lắng nghe tại http://localhost:8000/mcp
+# Server lắng nghe tại http://127.0.0.1:8002/mcp
 
 # Terminal 2 — client kết nối kèm token
 python auth_client.py
@@ -51,7 +51,8 @@ Client                                Server
 
 - Token hợp lệ → truy cập tool bình thường
 - Thiếu token → `401`
-- Token sai → `403`
+- Token sai → `401` (đã kiểm tra với MCP SDK 2.3.0)
+- Token hợp lệ nhưng thiếu scope bắt buộc → `403` nếu server cấu hình required scopes
 - Logic tool không biết gì về auth — SDK xử lý ở tầng transport
 
 ---
@@ -165,3 +166,71 @@ versioned_client.py                     versioned_server.py
 ```
 
 Client thông minh đọc `server://info` để biết tool nào deprecated, tự chọn dùng v2 nếu có, fallback v1 nếu không.
+
+## Chạy checkpoint trên Windows PowerShell
+
+Mở hai terminal tại thư mục gốc repo. Terminal 1:
+
+```powershell
+cd 03-production
+# Dùng token demo mặc định cho server
+Remove-Item Env:MCP_AUTH_TOKEN -ErrorAction SilentlyContinue
+..\.venv\Scripts\python.exe -X utf8 auth_server.py
+```
+
+Terminal 2:
+
+```powershell
+cd 03-production
+# Token đúng, mặc định
+Remove-Item Env:MCP_AUTH_TOKEN -ErrorAction SilentlyContinue
+..\.venv\Scripts\python.exe -X utf8 auth_client.py
+
+# Token sai: server từ chối, không có danh sách tool
+$env:MCP_AUTH_TOKEN = "wrong-token"
+..\.venv\Scripts\python.exe -X utf8 auth_client.py
+
+# Khôi phục biến môi trường trước khi chạy các demo tiếp theo
+Remove-Item Env:MCP_AUTH_TOKEN -ErrorAction SilentlyContinue
+..\.venv\Scripts\python.exe -X utf8 registry_client.py
+..\.venv\Scripts\python.exe -X utf8 versioned_client.py
+```
+
+Auth server dùng cổng 8002, ADK Web dùng 8000; có thể chạy song song.
+Dừng auth server bằng Ctrl+C khi test xong. Có thể đặt `MCP_AUTH_PORT`
+giống nhau ở cả hai terminal để đổi cổng. Dùng endpoint `/mcp`; auth server
+không có trang chủ `/`. `0.0.0.0` là địa chỉ bind, không phải URL trang web.
+Token demo là dữ liệu minh họa; việc xác thực do middleware xử lý,
+không được đặt trong hàm `get_weather`.
+
+Registry demo chưa dùng LLM: code chọn tool theo tag và semantic version.
+Nếu tất cả kết quả đều deprecated, `best_match()` vẫn chọn một kết quả
+deprecated làm fallback. Chỉ hai server weather có mã triển khai trong repo;
+email và database là mục registry minh họa, không cần kết nối để làm checkpoint.
+
+### Bằng chứng và test tay
+
+Log nằm trong thư mục `screenshots` ở gốc repo:
+
+| Demo | Log | Ảnh cần chụp thủ công |
+|---|---|---|
+| Auth, token đúng | `03a-auth-ok.txt` | `03a-auth-ok.png` |
+| Auth, token sai | `03a-auth-fail.txt` | `03a-auth-fail.png` |
+| Tool Registry | `03b-registry.txt` | `03b-registry.png` |
+| Versioning | `03c-versioning.txt` | `03c-versioning.png` |
+
+Log server: `03a-auth-server.txt`; mã HTTP kiểm tra trực tiếp:
+`03a-auth-status.json`. Trên môi trường test, HTTP client có thể báo
+`peer unexpectedly closed connection` khi server trả lỗi auth, hoặc cảnh báo
+khi kết thúc session. Đối chiếu access log của server để thấy HTTP 401;
+không coi lỗi kết nối đơn thuần là bằng chứng xác thực bị từ chối.
+
+Test tay thêm:
+
+- Auth: token đúng nhận tool và dữ liệu; token sai không được khám phá tool.
+  Đổi token ở **client**, giữ nguyên token cấu hình lúc server khởi động.
+- Registry: đặt `deprecated: true` cho `get_weather_v2` trong `registry.json`,
+  chạy lại: best match phải chuyển về v1. Sau đó khôi phục JSON.
+- Versioning: bỏ `include_forecast` và `units` khỏi lời gọi v2 trong client,
+  chạy lại: vẫn nhận JSON, `units` là `celsius` và không có `forecast`.
+  Sau đó khôi phục lời gọi.

@@ -2,11 +2,27 @@ from typing import Any
 import asyncio
 import httpx
 import os
+import ssl
+from pathlib import Path
+from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+
+# Resolve the shared .env independently of the current working directory.
+SOURCE_FILE = Path(__file__).resolve()
+ENV_FILE = (
+    SOURCE_FILE.parents[2] / ".env"
+    if len(SOURCE_FILE.parents) > 2
+    else SOURCE_FILE.parent / ".env"
+)
+load_dotenv(ENV_FILE, encoding="utf-8-sig")
 
 # Initialize FastMCP server
 port = int(os.getenv("PORT", 8085))
-mcp = FastMCP("weather", host="0.0.0.0", port=port)
+cloud_run = bool(os.getenv("K_SERVICE"))
+mcp = FastMCP(
+    "weather", host="0.0.0.0", port=port,
+    stateless_http=cloud_run, json_response=cloud_run,
+)
 
 # Constants
 WEATHERAPI_BASE = "https://api.weatherapi.com/v1"
@@ -19,7 +35,7 @@ async def make_weather_request(endpoint: str, params: dict[str, str]) -> dict[st
     """Make a request to the WeatherAPI with proper error handling."""
     # Check if API key is set
     if not API_KEY:
-        print("ERROR: WeatherAPI key not set. Please set WEATHERAPI_KEY environment variable.")
+        print(f"ERROR: Set WEATHERAPI_KEY in {ENV_FILE} or the environment.")
         return None
         
     headers = {
@@ -30,7 +46,8 @@ async def make_weather_request(endpoint: str, params: dict[str, str]) -> dict[st
     
     url = f"{WEATHERAPI_BASE}/{endpoint}"
     
-    async with httpx.AsyncClient() as client:
+    # Trust OS certificates (including Windows), while verifying HTTPS.
+    async with httpx.AsyncClient(verify=ssl.create_default_context()) as client:
         try:
             response = await client.get(url, headers=headers, params=params, timeout=30.0)
             response.raise_for_status()
@@ -61,7 +78,7 @@ async def get_current_weather(city: str) -> str:
 
     if not data:
         if not API_KEY:
-            return f"❌ WeatherAPI key not configured. Please set WEATHERAPI_KEY environment variable with your API key from weatherapi.com"
+            return "❌ WeatherAPI key not configured. Set WEATHERAPI_KEY in the project root .env."
         return f"Unable to fetch current weather data for {city}. Please check the city name and API key configuration."
 
     current = data["current"]
@@ -104,7 +121,7 @@ async def get_forecast(city: str, days: int = 3) -> str:
 
     if not data:
         if not API_KEY:
-            return f"❌ WeatherAPI key not configured. Please set WEATHERAPI_KEY environment variable with your API key from weatherapi.com"
+            return "❌ WeatherAPI key not configured. Set WEATHERAPI_KEY in the project root .env."
         return f"Unable to fetch forecast data for {city}. Please check the city name and API key configuration."
 
     location = data["location"]

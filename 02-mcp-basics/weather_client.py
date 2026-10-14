@@ -1,8 +1,8 @@
 """MCP CLIENT minh hoạ — kết nối tới weather_server.py qua giao thức MCP.
 
-Điểm mấu chốt: client KHÔNG hard-code tool. Nó hỏi server "anh có tool gì?"
+Điểm mấu chốt: client KHÔNG tự viết schema tool. Nó hỏi server "anh có tool gì?"
 (list_tools) tại runtime, rồi gọi tool (call_tool) để SERVER thực thi và trả
-kết quả về qua MCP.
+kết quả về qua MCP. Demo vẫn ghi cố định tên get_weather và ba thành phố.
 
 Ví dụ này không cần ANTHROPIC_API_KEY — nó cho thấy lớp giao thức MCP hoạt
 động độc lập với model. (Trong thực tế, một LLM sẽ dùng Function Calling để

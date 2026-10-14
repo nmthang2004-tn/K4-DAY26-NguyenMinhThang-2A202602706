@@ -7,12 +7,12 @@ Luồng hoạt động:
   Client gửi request HTTP kèm header "Authorization: Bearer <token>"
     → MCP SDK tự chạy BearerAuthBackend để xác minh token
     → Token hợp lệ → cho phép truy cập tool
-    → Token sai / thiếu → trả về 401/403
+    → Token sai / thiếu → trả về 401; thiếu scope bắt buộc → 403
 
 Cách chạy:
     pip install -r ../requirements.txt     # từ thư mục gốc repo
     python auth_server.py
-    # Server lắng nghe tại http://localhost:8000/mcp
+    # Server lắng nghe tại http://127.0.0.1:8002/mcp (tách cổng ADK 8000)
 """
 
 from __future__ import annotations
@@ -22,6 +22,9 @@ import os
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
+
+PORT = int(os.environ.get("MCP_AUTH_PORT", "8002"))
+RESOURCE_URL = f"http://127.0.0.1:{PORT}/mcp"
 
 # --- Token store (production: dùng DB, Redis, hoặc JWT verification) ---
 VALID_TOKENS: dict[str, str] = {
@@ -41,15 +44,20 @@ class StaticTokenVerifier(TokenVerifier):
         client_id = VALID_TOKENS.get(token)
         if client_id is None:
             return None
-        return AccessToken(token=token, client_id=client_id, scopes=["weather:read"])
+        return AccessToken(
+            token=token, client_id=client_id, scopes=["weather:read"],
+            resource=RESOURCE_URL,
+        )
 
 
 # --- MCP Server — logic tool không biết gì về auth --------------------
 mcp = MCPServer(
     "weather-secure",
     auth=AuthSettings(
-        issuer_url="http://localhost:8000",
-        resource_server_url="http://localhost:8000",
+        issuer_url=f"http://127.0.0.1:{PORT}",
+        resource_server_url=RESOURCE_URL,
+        validate_token_resource=True,
+        required_scopes=["weather:read"],
     ),
     token_verifier=StaticTokenVerifier(),
 )
@@ -68,4 +76,5 @@ def get_weather(city: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8000)
+    print(f"Auth MCP endpoint: {RESOURCE_URL}")
+    mcp.run(transport="streamable-http", host="127.0.0.1", port=PORT)

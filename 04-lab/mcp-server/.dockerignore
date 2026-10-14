@@ -1,0 +1,4 @@
+*
+!Dockerfile
+!weather.py
+!requirements-cloud-run.txt

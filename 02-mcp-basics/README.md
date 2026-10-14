@@ -19,6 +19,45 @@ pip install -r ../requirements.txt
 python weather_client.py     # client tự khởi động weather_server.py
 ```
 
+Trên Windows PowerShell, từ thư mục gốc repo:
+
+```powershell
+cd 02-mcp-basics
+..\.venv\Scripts\python.exe -X utf8 weather_client.py
+```
+
+Client tự khởi động server bằng cùng Python interpreter. Không cần terminal
+server riêng, `.env`, Gemini hay WeatherAPI. Chạy từ `02-mcp-basics` vì
+đường dẫn `weather_server.py` trong client hiện là đường dẫn tương đối.
+
+### Checkpoint đã kiểm tra
+
+- Chạy thành công khi loại bỏ các biến môi trường API key khỏi tiến trình test.
+- `list_tools()` công bố `get_weather` với mô tả khớp docstring server.
+- Schema nhận `city` kiểu string, bắt buộc.
+- Ba lần gọi Hanoi, Danang, Haiphong trả đúng dữ liệu mock bên dưới.
+- Gọi Tokyo trả dữ liệu mặc định 28°C; thiếu `city` trả lỗi tool.
+
+Log thực tế: `screenshots/02-mcp-client.txt` ở thư mục gốc repo.
+Schema và hai trường hợp bổ sung: `screenshots/02-mcp-schema-check.json`.
+Ảnh terminal vẫn cần chụp thủ công bằng Snipping Tool, có đủ danh sách
+tools và ba lần `call_tool`, lưu thành `screenshots/02-mcp-client.png`.
+
+### Test tay
+
+1. Chạy client, đối chiếu ba kết quả với output mong đợi bên dưới.
+2. Đổi **chỉ docstring** của `get_weather` trong server, chạy lại client:
+   mô tả được liệt kê phải đổi theo. Sau đó khôi phục docstring.
+3. Đổi giá trị mock của Hanoi trong server, chạy lại client:
+   kết quả Hanoi phải đổi mà không sửa logic client. Sau đó khôi phục dữ liệu.
+4. Thêm `"Tokyo"` vào danh sách thành phố trong client, chạy lại:
+   nhận `Tokyo: 28°C, không có dữ liệu chi tiết`. Sau đó khôi phục danh sách.
+
+Lưu ý: client khám phá **schema** lúc chạy, nhưng demo vẫn ghi cố định
+tên `"get_weather"`, tham số `"city"` và danh sách thành phố khi gọi.
+Chưa có model chọn tool tự động. Việc tự sinh schema ở đây do decorator
+của MCP SDK thực hiện; giao thức MCP chuẩn hóa cách công bố và gọi tool.
+
 Kết quả mong đợi:
 
 ```

@@ -5,16 +5,49 @@ chính file app này. Model chỉ QUYẾT ĐỊNH gọi tool nào; app mới là
 
 Cách chạy:
     pip install -r ../requirements.txt
-    export GEMINI_API_KEY=...
+    Điền GEMINI_API_KEY trong .env ở thư mục gốc repo.
     python weather_function_calling.py
 """
 
 from google import genai
 from google.genai import types
+import os
+import ssl
+from pathlib import Path
+from dotenv import load_dotenv
 
-client = genai.Client()
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(ENV_FILE, encoding="utf-8-sig")
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError(f"Set GEMINI_API_KEY in {ENV_FILE} or the environment.")
+# Use the OS trust store, including Windows certificates, for HTTPS.
+client = genai.Client(
+    api_key=api_key,
+    http_options=types.HttpOptions(
+        client_args={"verify": ssl.create_default_context()},
+        timeout=60_000,
+        retry_options=types.HttpRetryOptions(attempts=1),
+    ),
+)
 
-MODEL = "gemini-2.5-flash"
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+FALLBACK_MODELS = (
+    "gemini-3.1-flash-lite", "gemini-3.6-flash-lite", "gemini-3.6-flash",
+    "gemini-3.7-flash", "gemini-3.8-flash",
+)
+
+
+def generate_with_fallback(**kwargs):
+    """Retry only model generation, preserving the current conversation/tools."""
+    for model in dict.fromkeys((MODEL, *FALLBACK_MODELS)):
+        try:
+            response = client.models.generate_content(model=model, **kwargs)
+            print(f"  [model sử dụng] {model}")
+            return response
+        except Exception as error:
+            print(f"  [model lỗi] {model}: {type(error).__name__}; thử model tiếp theo")
+    raise RuntimeError("Tất cả model chính và fallback đều thất bại.")
 
 SYSTEM_INSTRUCTION = (
     "Bạn là trợ lý thời tiết thân thiện, trả lời bằng tiếng Việt tự nhiên. "
@@ -66,6 +99,16 @@ def get_weather(city: str) -> str:
     }
     import json
 
+    # Gemini may return English names even when the question is Vietnamese.
+    city_aliases = {
+        "hanoi": "Hà Nội",
+        "ha noi": "Hà Nội",
+        "da nang": "Đà Nẵng",
+        "danang": "Đà Nẵng",
+        "ho chi minh": "Hồ Chí Minh",
+        "ho chi minh city": "Hồ Chí Minh",
+    }
+    city = city_aliases.get(city.strip().lower(), city.strip())
     default = {"nhiệt_độ": "28°C", "thời_tiết": "không có dữ liệu chi tiết"}
     return json.dumps({"city": city, **mock_data.get(city, default)}, ensure_ascii=False)
 
@@ -77,12 +120,12 @@ def run(prompt: str) -> str:
     ]
 
     # 3. Gọi model — model quyết định có gọi tool hay không
-    resp = client.models.generate_content(
-        model=MODEL,
+    resp = generate_with_fallback(
         contents=contents,
         config=types.GenerateContentConfig(
             tools=TOOLS,
             system_instruction=SYSTEM_INSTRUCTION,
+            thinking_config=types.ThinkingConfig(thinking_level="low"),
         ),
     )
 
@@ -104,12 +147,12 @@ def run(prompt: str) -> str:
 
         # Gửi kết quả tool trả về cho model
         contents.append(types.Content(role="user", parts=function_responses))
-        resp = client.models.generate_content(
-            model=MODEL,
+        resp = generate_with_fallback(
             contents=contents,
             config=types.GenerateContentConfig(
                 tools=TOOLS,
                 system_instruction=SYSTEM_INSTRUCTION,
+                thinking_config=types.ThinkingConfig(thinking_level="low"),
             ),
         )
 
@@ -118,6 +161,15 @@ def run(prompt: str) -> str:
 
 
 if __name__ == "__main__":
-    question = "Thời tiết Hà Nội và Đà Nẵng hôm nay thế nào?"
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Gemini Function Calling demo")
+    parser.add_argument(
+        "--prompt",
+        default="Thời tiết Hà Nội và Đà Nẵng hôm nay thế nào?",
+        help="Câu hỏi để kiểm tra function calling",
+    )
+    question = parser.parse_args().prompt
+    print(f"Model: {MODEL}")
     print(f"User: {question}\n")
     print("Trả lời:", run(question))

@@ -46,7 +46,7 @@ pip install -r requirements.txt
 cd 02-mcp-basics && python weather_client.py
 
 # Function Calling (cần Gemini API key)
-export GEMINI_API_KEY=...
+# Set GEMINI_API_KEY in the repository root .env
 cd 01-function-calling && python weather_function_calling.py
 
 # Production — Auth (2 terminal)
@@ -176,7 +176,7 @@ MCP server phục vụ qua **HTTP** cho nhiều client → cần xác thực. MC
 
 - Server: cấu hình `AuthSettings` + implement `TokenVerifier` protocol
 - Client: gửi header `Authorization: Bearer <token>` qua `create_mcp_http_client(headers=...)` của MCP SDK
-- Không có token → 401, token sai → 403, logic tool không biết gì về auth
+- Thiếu hoặc sai token → 401; token hợp lệ nhưng thiếu scope bắt buộc → 403. Logic tool không biết gì về auth.
 
 | Tầng | Demo (stdio) | Production (HTTP) |
 |---|---|---|
