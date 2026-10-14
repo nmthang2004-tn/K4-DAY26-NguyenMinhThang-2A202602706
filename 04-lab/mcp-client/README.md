@@ -40,18 +40,18 @@ AI agent built with **Google Agent Development Kit (ADK)** that uses tools from 
 
 ```bash
 cd ../mcp-server
-export WEATHERAPI_KEY="your_weatherapi_key"
+# Set WEATHERAPI_KEY in the repository root .env
 uv run python weather.py
 ```
 
 ### 2. Setup Environment
 
 ```bash
-cd mcp-client
+cd ../mcp-client
 
-# Create .env file with your Google API key
-# Get free key from: https://aistudio.google.com/apikey
-echo "GOOGLE_API_KEY=your_google_api_key_here" > .env
+# Use .env.example as a template for the repository root .env.
+# Set GEMINI_API_KEY and WEATHERAPI_KEY there.
+# Gemini key: https://aistudio.google.com/apikey
 ```
 
 ### 3. Install Dependencies
@@ -83,7 +83,6 @@ mcp-client/
 │   ├── agent.py           # Main agent with MCP connection
 │   └── __init__.py
 ├── pyproject.toml
-├── .env                   # Environment variables (create this)
 └── README.md
 ```
 
@@ -103,7 +102,7 @@ connection_params = StreamableHTTPConnectionParams(
 
 root_agent = Agent(
     name="weather_agent",
-    model="gemini-2.5-flash",
+    model=FallbackGemini(model=MODEL),
     tools=[weather_tools],
 )
 ```
@@ -130,10 +129,28 @@ Fix the connection and restart ADK web.
 
 ## Environment Variables
 
-Create `.env` file:
-```bash
-GOOGLE_API_KEY=your_gemini_api_key
+Create `.env` at the repository root (next to `requirements.txt`):
+```dotenv
+GEMINI_API_KEY=your_gemini_api_key_here
+WEATHERAPI_KEY=your_weatherapi_key_here
+MCP_SERVER_URL=http://localhost:8085/mcp
 ```
+
+The agent maps `GEMINI_API_KEY` to `GOOGLE_API_KEY` for ADK. Both the server
+and client load the root `.env` regardless of the current working directory.
+Existing environment variables take precedence. Restart both processes after
+changing the keys. Verify setup with `uv run python verify_setup.py`.
+
+Set `GEMINI_MODEL` optionally; the agent defaults to `gemini-3.5-flash-lite`.
+The `SystemTrustedGemini` class uses OS certificates for HTTPS to Gemini.
+`FallbackGemini` tries the primary model first, then `gemini-3.1-flash-lite`,
+`gemini-3.6-flash-lite`, `gemini-3.6-flash`, `gemini-3.7-flash`,
+`gemini-3.8-flash` on model-request errors. Failed streamed output is discarded
+before retrying; tool execution is not repeated by the fallback mechanism.
+If every model fails, the error is reported. Unavailable models are skipped
+when the API rejects them. The next request starts with the primary model again.
+Verification opens a real MCP session, discovers the three expected tools
+and calls `health_check`. An agent without tools fails verification.
 
 ## Resources
 

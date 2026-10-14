@@ -6,29 +6,28 @@ Checks if all components are configured correctly
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+CLIENT_DIR = Path(__file__).resolve().parent
+ENV_FILE = CLIENT_DIR.parents[1] / ".env"
 
 def check_environment():
     """Check if .env file exists and is configured"""
     print("🔍 Checking environment configuration...")
     
-    env_file = Path(".env")
-    if not env_file.exists():
-        print("❌ .env file not found")
-        print("   Run: echo 'GOOGLE_API_KEY=your_key' > .env")
-        return False
-    
-    # Check if GOOGLE_API_KEY is set
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key or api_key == "your_google_api_key_here":
-        print("❌ GOOGLE_API_KEY not configured in .env")
-        print("   Get key from: https://aistudio.google.com/apikey")
-        return False
-    
-    print(f"✅ GOOGLE_API_KEY configured ({api_key[:10]}...)")
-    return True
+    load_dotenv(ENV_FILE, encoding="utf-8-sig")
+    if not ENV_FILE.exists():
+        print(f"⚠️  {ENV_FILE} not found; checking environment variables instead")
+
+    configured = True
+    for name in ("GEMINI_API_KEY", "WEATHERAPI_KEY"):
+        value = os.getenv(name, "").strip()
+        if not value or value.startswith("your_"):
+            print(f"❌ {name} not configured; set it in {ENV_FILE}")
+            configured = False
+        else:
+            print(f"✅ {name} configured")
+    return configured
 
 def check_dependencies():
     """Check if required packages are installed"""
@@ -36,7 +35,7 @@ def check_dependencies():
     
     required_packages = [
         ("google.adk", "Google ADK"),
-        ("google.generativeai", "Google Generative AI"),
+        ("google.genai", "Google GenAI"),
         ("mcp", "MCP"),
         ("fastmcp", "FastMCP"),
         ("dotenv", "python-dotenv"),
@@ -54,7 +53,7 @@ def check_dependencies():
     
     if not all_installed:
         print("\n   Install with: uv sync")
-        print("   Or: pip install google-adk google-generativeai mcp fastmcp python-dotenv httpx")
+        print("   Or: pip install google-adk google-genai mcp fastmcp python-dotenv httpx")
     
     return all_installed
 
@@ -69,7 +68,7 @@ def check_agent_structure():
     
     all_exist = True
     for file_path in required_files:
-        path = Path(file_path)
+        path = CLIENT_DIR / file_path
         if path.exists():
             print(f"✅ {file_path}")
         else:
@@ -83,21 +82,31 @@ def check_mcp_server():
     print("\n🔍 Checking MCP server connectivity...")
 
     # Cùng URL mà weather_agent/agent.py dùng (biến môi trường MCP_SERVER_URL)
-    from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(ENV_FILE, encoding="utf-8-sig")
     server_url = os.getenv("MCP_SERVER_URL", "http://localhost:8085/mcp")
 
     try:
-        import httpx
+        import asyncio
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
 
-        response = httpx.get(server_url, timeout=10.0)
-        # GET thuần lên endpoint MCP thường bị từ chối (400/405/406) vì thiếu
-        # header/session MCP — nhưng có phản hồi nghĩa là server đang chạy.
-        if response.status_code < 500:
-            print(f"✅ MCP server reachable at {server_url} (HTTP {response.status_code})")
-            return True
-        print(f"⚠️  MCP server returned status {response.status_code}")
-        return False
+        async def verify_connection():
+            async with streamablehttp_client(server_url) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    tools = await session.list_tools()
+                    names = {tool.name for tool in tools.tools}
+                    expected = {"get_current_weather", "get_forecast", "health_check"}
+                    if not expected.issubset(names):
+                        raise RuntimeError(f"Missing MCP tools: {expected - names}")
+                    result = await session.call_tool("health_check", {})
+                    if result.isError:
+                        raise RuntimeError("MCP health_check failed")
+                    print(f"✅ MCP server connected at {server_url}")
+                    print(f"   Tools: {', '.join(sorted(names))}")
+
+        asyncio.run(asyncio.wait_for(verify_connection(), timeout=30.0))
+        return True
 
     except Exception as e:
         print(f"❌ Cannot reach MCP server at {server_url}: {e}")
@@ -115,7 +124,10 @@ def check_agent_import():
         
         from weather_agent import root_agent
         print(f"✅ Agent imported successfully: {root_agent.name}")
-        print(f"   Model: {root_agent.model}")
+        print(f"   Model: {getattr(root_agent.model, 'model', root_agent.model)}")
+        if not root_agent.tools:
+            print("❌ Agent has no MCP tools (fallback mode)")
+            return False
         return True
     except Exception as e:
         print(f"❌ Failed to import agent: {e}")
